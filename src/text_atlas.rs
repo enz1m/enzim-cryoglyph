@@ -1,6 +1,6 @@
 // Modified by enzUI contributors. See FORK.md.
 use crate::{Cache, CacheKey, GlyphDetails, text_render::ContentType};
-use etagere::{Allocation, BucketedAtlasAllocator, size2};
+use etagere::{AllocId, Allocation, BucketedAtlasAllocator, size2};
 use lru::LruCache;
 use rustc_hash::FxHasher;
 use std::hash::BuildHasherDefault;
@@ -12,6 +12,48 @@ use wgpu::{
 };
 
 type Hasher = BuildHasherDefault<FxHasher>;
+
+/// Drop the least recently used *sized* glyph from `glyph_cache`, returning the
+/// atlas allocation it owned so the caller can deallocate it.
+///
+/// Unsized entries (`atlas_id == None`, a glyph that was rasterized but has no
+/// pixels) own no allocation, so they are popped and skipped. `None` means the
+/// cache cannot give anything back: it is empty, or the least recently used
+/// glyph is still in use this frame.
+///
+/// This is the eviction body lifted out of
+/// [`InnerAtlas::try_allocate`] unchanged — same `peek_lru`/`pop_lru` order,
+/// same in-use guards, same return conditions. Lifting it makes the `lru`
+/// operations the atlas depends on testable without a `wgpu` device, which is
+/// what lets the `lru 0.16 -> 0.18` security bump carry behavior evidence that
+/// does not require a GPU (see `FORK.md`).
+pub(crate) fn evict_least_recently_used(
+    glyph_cache: &mut LruCache<CacheKey, GlyphDetails, Hasher>,
+    generation: usize,
+) -> Option<AllocId> {
+    let (_, mut value) = glyph_cache.peek_lru()?;
+
+    // Find a glyph with an actual size
+    while value.atlas_id.is_none() {
+        // All sized glyphs are in use, cache is full
+        if value.last_used == generation {
+            return None;
+        }
+
+        let _ = glyph_cache.pop_lru();
+
+        (_, value) = glyph_cache.peek_lru()?;
+    }
+
+    // All sized glyphs are in use, cache is full
+    if value.last_used == generation {
+        return None;
+    }
+
+    let (_, value) = glyph_cache.pop_lru().unwrap();
+
+    Some(value.atlas_id.unwrap())
+}
 
 /// Instrumentation counters for a [`TextAtlas`].
 ///
@@ -138,27 +180,9 @@ impl InnerAtlas {
             }
 
             // Try to free least recently used allocation
-            let (_, mut value) = self.glyph_cache.peek_lru()?;
+            let freed = evict_least_recently_used(&mut self.glyph_cache, self.generation)?;
 
-            // Find a glyph with an actual size
-            while value.atlas_id.is_none() {
-                // All sized glyphs are in use, cache is full
-                if value.last_used == self.generation {
-                    return None;
-                }
-
-                let _ = self.glyph_cache.pop_lru();
-
-                (_, value) = self.glyph_cache.peek_lru()?;
-            }
-
-            // All sized glyphs are in use, cache is full
-            if value.last_used == self.generation {
-                return None;
-            }
-
-            let (_, value) = self.glyph_cache.pop_lru().unwrap();
-            self.packer.deallocate(value.atlas_id.unwrap());
+            self.packer.deallocate(freed);
         }
     }
 
@@ -460,6 +484,176 @@ impl TextAtlas {
             &self.color_atlas.texture_view,
             &self.mask_atlas.texture_view,
         );
+    }
+}
+
+#[cfg(test)]
+mod eviction_tests {
+    //! Renderer-independent behavior gates for the glyph cache's `lru` usage
+    //!.
+    //!
+    //! These drive the REAL [`evict_least_recently_used`] — the body
+    //! [`InnerAtlas::try_allocate`] calls — over the REAL cache type
+    //! (`LruCache<CacheKey, GlyphDetails, Hasher>`), performing the exact
+    //! operations and order the atlas performs: `unbounded_with_hasher`,
+    //! `get_or_insert` on insertion, `get` when a glyph is reused, then
+    //! `peek_lru`/`pop_lru` when the packer is full.
+    //!
+    //! BOUNDARY: this is the cache-eviction contract only. It allocates no
+    //! `wgpu` device, uploads nothing, and therefore says nothing about GPU
+    //! atlas growth or the texture-copy path; those require a working GPU.
+
+    use super::*;
+    use crate::{CacheKey, GlyphDetails, GpuCacheStatus};
+    use cosmic_text::{CacheKeyFlags, fontdb};
+
+    fn key(glyph_id: u16) -> CacheKey {
+        CacheKey::new(
+            fontdb::ID::dummy(),
+            glyph_id,
+            16.0,
+            (0.0, 0.0),
+            fontdb::Weight::NORMAL,
+            CacheKeyFlags::empty(),
+        )
+        .0
+    }
+
+    /// A glyph exactly as `text_render` builds it: `atlas_id = Some(..)` for a
+    /// glyph that owns atlas space, `None` for one rasterized without pixels.
+    fn details(atlas_id: Option<AllocId>) -> GlyphDetails {
+        GlyphDetails {
+            width: 4,
+            height: 4,
+            gpu_cache: GpuCacheStatus::SkipRasterization,
+            atlas_id,
+            top: 0,
+            left: 0,
+            last_used: STALE,
+        }
+    }
+
+    /// The atlas's current frame and an earlier one: a glyph last used in
+    /// `STALE` is evictable during `NOW`.
+    const NOW: usize = 7;
+    const STALE: usize = 6;
+
+    fn mark_in_use(cache: &mut LruCache<CacheKey, GlyphDetails, Hasher>, key: &CacheKey) {
+        cache.peek_mut(key).expect("cached").last_used = NOW;
+    }
+
+    fn cache() -> LruCache<CacheKey, GlyphDetails, Hasher> {
+        LruCache::unbounded_with_hasher(Hasher::default())
+    }
+
+    /// The insertion the renderer performs (`get_or_insert`, never `insert`).
+    fn insert(
+        cache: &mut LruCache<CacheKey, GlyphDetails, Hasher>,
+        glyph_id: u16,
+        atlas_id: Option<AllocId>,
+    ) -> CacheKey {
+        let cache_key = key(glyph_id);
+        let _ = cache.get_or_insert(cache_key, || details(atlas_id));
+        cache_key
+    }
+
+    fn alloc(id: u32) -> AllocId {
+        AllocId::deserialize(id)
+    }
+
+    #[test]
+    fn evicts_the_least_recently_used_sized_glyph() {
+        let mut cache = cache();
+        let oldest = insert(&mut cache, 1, Some(alloc(11)));
+        let newest = insert(&mut cache, 2, Some(alloc(22)));
+
+        let freed = evict_least_recently_used(&mut cache, NOW);
+
+        assert_eq!(freed, Some(alloc(11)), "the oldest allocation is returned");
+        assert!(cache.peek(&oldest).is_none(), "the oldest entry is gone");
+        assert!(cache.peek(&newest).is_some(), "the newest entry is kept");
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn a_get_promotes_a_glyph_so_the_other_one_is_evicted() {
+        let mut cache = cache();
+        let first = insert(&mut cache, 1, Some(alloc(11)));
+        let second = insert(&mut cache, 2, Some(alloc(22)));
+
+        // Reusing a cached glyph in a later frame goes through `get`, which is
+        // the ONLY thing that makes `first` newer than `second`.
+        assert!(cache.get(&first).is_some(), "the reused glyph is cached");
+
+        let freed = evict_least_recently_used(&mut cache, NOW);
+
+        assert_eq!(
+            freed,
+            Some(alloc(22)),
+            "after the get, the untouched glyph is the least recently used"
+        );
+        assert!(cache.peek(&first).is_some(), "the reused glyph survives");
+        assert!(
+            cache.peek(&second).is_none(),
+            "the untouched glyph is evicted"
+        );
+    }
+
+    #[test]
+    fn unsized_entries_are_dropped_until_a_sized_one_is_found() {
+        let mut cache = cache();
+        let empty_glyph = insert(&mut cache, 1, None);
+        let sized = insert(&mut cache, 2, Some(alloc(22)));
+        let kept = insert(&mut cache, 3, Some(alloc(33)));
+
+        let freed = evict_least_recently_used(&mut cache, NOW);
+
+        assert_eq!(freed, Some(alloc(22)), "the first sized glyph is freed");
+        assert!(
+            cache.peek(&empty_glyph).is_none(),
+            "the pixel-less glyph ahead of it is dropped, not skipped in place"
+        );
+        assert!(cache.peek(&sized).is_none());
+        assert!(cache.peek(&kept).is_some(), "later glyphs are untouched");
+    }
+
+    #[test]
+    fn a_glyph_in_use_this_frame_is_never_evicted() {
+        let mut cache = cache();
+        let busy = insert(&mut cache, 1, Some(alloc(11)));
+        let _later = insert(&mut cache, 2, Some(alloc(22)));
+        mark_in_use(&mut cache, &busy);
+
+        let freed = evict_least_recently_used(&mut cache, NOW);
+
+        assert_eq!(
+            freed, None,
+            "eviction refuses rather than freeing a live glyph"
+        );
+        assert_eq!(cache.len(), 2, "and it leaves the cache untouched");
+        assert!(cache.peek(&busy).is_some());
+    }
+
+    #[test]
+    fn an_unsized_glyph_in_use_stops_the_scan() {
+        let mut cache = cache();
+        let busy_empty = insert(&mut cache, 1, None);
+        let sized = insert(&mut cache, 2, Some(alloc(22)));
+        mark_in_use(&mut cache, &busy_empty);
+
+        let freed = evict_least_recently_used(&mut cache, NOW);
+
+        assert_eq!(freed, None, "an in-use pixel-less glyph is not popped past");
+        assert_eq!(cache.len(), 2);
+        assert!(cache.peek(&sized).is_some());
+    }
+
+    #[test]
+    fn an_empty_cache_frees_nothing() {
+        let mut cache = cache();
+
+        assert_eq!(evict_least_recently_used(&mut cache, NOW), None);
+        assert_eq!(cache.len(), 0);
     }
 }
 
