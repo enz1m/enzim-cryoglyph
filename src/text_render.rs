@@ -1,3 +1,4 @@
+// Modified by enzUI contributors. See FORK.md.
 use crate::{
     ColorMode, FontSystem, GlyphDetails, GlyphToRender, GpuCacheStatus, PrepareError, RenderError,
     SwashCache, SwashContent, TextArea, TextAtlas, Viewport,
@@ -133,13 +134,7 @@ impl TextRenderer {
                                 match inner.try_allocate(width, height) {
                                     Some(a) => break a,
                                     None => {
-                                        if !atlas.grow(
-                                            device,
-                                            queue,
-                                            font_system,
-                                            cache,
-                                            content_type,
-                                        ) {
+                                        if !atlas.grow(device, queue, content_type) {
                                             return Err(PrepareError::AtlasFull);
                                         }
 
@@ -173,6 +168,12 @@ impl TextRenderer {
                                 },
                             );
 
+                            // instrumentation.
+                            inner.stats.glyphs_rasterized += 1;
+                            inner.stats.glyph_queue_writes += 1;
+                            inner.stats.glyph_queue_write_bytes +=
+                                (width * height * inner.num_channels()) as u64;
+
                             (
                                 GpuCacheStatus::InAtlas {
                                     x: atlas_min.x as u16,
@@ -184,6 +185,10 @@ impl TextRenderer {
                             )
                         } else {
                             let inner = &mut atlas.color_atlas;
+                            // The glyph was still rasterized,
+                            // it just has no pixels to upload.
+                            inner.stats.glyphs_rasterized += 1;
+                            inner.stats.glyphs_without_pixels += 1;
                             (GpuCacheStatus::SkipRasterization, None, inner)
                         };
 

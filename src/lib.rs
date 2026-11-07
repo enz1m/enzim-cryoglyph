@@ -1,3 +1,4 @@
+// Modified by enzUI contributors. See FORK.md.
 //! Glyphon provides a simple way to render 2D text with [wgpu], [cosmic-text] and [etagere].
 //!
 //! [wpgu]: https://github.com/gfx-rs/wgpu
@@ -12,7 +13,7 @@ mod viewport;
 
 pub use cache::Cache;
 pub use error::{PrepareError, RenderError};
-pub use text_atlas::{ColorMode, TextAtlas};
+pub use text_atlas::{AtlasStatistics, ColorMode, TextAtlas};
 pub use text_render::TextRenderer;
 pub use viewport::Viewport;
 
@@ -46,9 +47,9 @@ pub(crate) struct GlyphDetails {
     atlas_id: Option<AllocId>,
     top: i16,
     left: i16,
-    /// The atlas `generation` in which this glyph was last touched by `prepare`. A glyph is
-    /// considered in use for the current frame (and not evictable) while this equals the atlas's
-    /// current `generation`.
+    /// The atlas generation in which `prepare` last touched this glyph. While
+    /// it equals the atlas's current generation, the glyph is in use this
+    /// frame and cannot be evicted (upstream cryoglyph f4e7e4e).
     last_used: usize,
 }
 
