@@ -11,7 +11,7 @@ license = "MIT OR Apache-2.0 OR Zlib"
 wgpu = { version = "29", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "7f040c8501f6838262c90ede4edfa40940fe2de8", default-features = false, features = ["wgsl"] }
 etagere = "0.2"
 cosmic-text = { version = "0.19", git = "https://github.com/enz1m/enzim-cosmic-text.git", rev = "ad474131e52c0fde5979f8def2889489b50a0480" }
-lru = { version = "0.16", default-features = false }
+lru = { version = "0.18.2", default-features = false }
 rustc-hash = "2"
 
 [dev-dependencies]
