@@ -88,8 +88,13 @@ impl TextRenderer {
 
             for run in layout_runs {
                 for glyph in run.glyphs.iter() {
-                    let physical_glyph =
-                        glyph.physical((text_area.left, text_area.top), text_area.scale);
+                    // The baseline joins the glyph's own
+                    // rounding. Rounding `line_y` separately let two roundings
+                    // add up to a whole physical pixel of vertical error.
+                    let physical_glyph = glyph.physical(
+                        (text_area.left, text_area.top + run.line_y * text_area.scale),
+                        text_area.scale,
+                    );
 
                     let cache_key = physical_glyph.cache_key;
 
@@ -205,8 +210,7 @@ impl TextRenderer {
                     };
 
                     let mut x = physical_glyph.x + details.left as i32;
-                    let mut y = (run.line_y * text_area.scale).round() as i32 + physical_glyph.y
-                        - details.top as i32;
+                    let mut y = physical_glyph.y - details.top as i32;
 
                     let (mut atlas_x, mut atlas_y, content_type) = match details.gpu_cache {
                         GpuCacheStatus::InAtlas { x, y, content_type } => (x, y, content_type),
@@ -415,4 +419,77 @@ fn create_oversized_buffer(
 
 fn zero_depth(_: usize) -> f32 {
     0f32
+}
+
+#[cfg(test)]
+mod baseline_tests {
+    use super::*;
+    use crate::{Attrs, Cache, Color, Metrics, Resolution, Shaping, TextBounds};
+
+    #[test]
+    #[ignore = "requires a Vulkan adapter and an installed sans-serif font"]
+    fn prepared_baseline_matches_combined_physical_rounding() {
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = wgpu::Backends::VULKAN;
+        let instance = wgpu::Instance::new(descriptor);
+        let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&Default::default())).unwrap();
+        let cache = Cache::new(&device);
+        let mut atlas = TextAtlas::new(&device, &queue, &cache, wgpu::TextureFormat::Rgba8Unorm);
+        let mut renderer = TextRenderer::new(&mut atlas, &device, Default::default(), None);
+        let mut viewport = Viewport::new(&device, &cache);
+        viewport.update(
+            &queue,
+            Resolution {
+                width: 256,
+                height: 256,
+            },
+        );
+        let mut fonts = FontSystem::new();
+        let mut swash = SwashCache::new();
+        let mut buffer = crate::Buffer::new(&mut fonts, Metrics::new(19.25, 25.125));
+        buffer.set_size(Some(200.0), Some(200.0));
+        buffer.set_text("H", &Attrs::new(), Shaping::Advanced, None);
+        buffer.shape_until_scroll(&mut fonts, false);
+        let mut cases = 0;
+        for step in 0..20 {
+            let top = 20.0 + step as f32 / 20.0;
+            let run = buffer.layout_runs().next().expect("a shaped line");
+            let glyph = run.glyphs.first().expect("a shaped glyph");
+            let physical = glyph.physical((20.0, top + run.line_y * 1.17), 1.17);
+            let image = swash
+                .get_image_uncached(&mut fonts, physical.cache_key)
+                .expect("a rasterized glyph");
+            assert!(image.placement.height > 0);
+            let expected = physical.y - image.placement.top;
+            let mut encoder = device.create_command_encoder(&Default::default());
+            renderer
+                .prepare(
+                    &device,
+                    &queue,
+                    &mut encoder,
+                    &mut fonts,
+                    &mut atlas,
+                    &viewport,
+                    [TextArea {
+                        text: buffer.layout_runs(),
+                        left: 20.0,
+                        top,
+                        scale: 1.17,
+                        bounds: TextBounds::default(),
+                        default_color: Color::rgb(255, 255, 255),
+                    }],
+                    &mut swash,
+                )
+                .unwrap();
+            queue.submit(Some(encoder.finish()));
+            assert_eq!(renderer.glyph_vertices.len(), 1);
+            assert_eq!(renderer.glyph_vertices[0].pos[1], expected, "top={top}");
+            atlas.trim();
+            cases += 1;
+        }
+        assert_eq!(cases, 20);
+        device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    }
 }
