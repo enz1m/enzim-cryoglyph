@@ -1,25 +1,36 @@
-<div align="center">
+# enzim-cryoglyph
 
-# cryoglyph
+The enzUI fork of [iced-rs/cryoglyph](https://github.com/iced-rs/cryoglyph),
+a GPU text renderer built on wgpu and cosmic-text. The Rust crate remains
+`cryoglyph`; the repository name distinguishes this fork from upstream.
 
-[![Crates.io](https://img.shields.io/crates/v/cryoglyph.svg)](https://crates.io/crates/cryoglyph)
-[![License](https://img.shields.io/crates/l/cryoglyph.svg)](https://github.com/iced-rs/cryoglyph/blob/master/LICENSE)
-[![Downloads](https://img.shields.io/crates/d/cryoglyph.svg)](https://crates.io/crates/cryoglyph)
-[![Test Status](https://img.shields.io/github/actions/workflow/status/iced-rs/cryoglyph/test.yml?branch=master&event=push&label=test)](https://github.com/iced-rs/cryoglyph/actions)
-[![Discord Server](https://img.shields.io/discord/628993209984614400?label=&labelColor=6A7EC2&logo=discord&logoColor=ffffff&color=7389D8)](https://discord.gg/3xZJ65GAhd)
+Changes include GPU copies on atlas growth, growth limits and statistics,
+cache-eviction regression tests, and combined baseline rounding.
+Upstream history, authorship and licenses are preserved.
+See [FORK.md](FORK.md), [validation](VALIDATION.md) and the
+[original upstream README](README.upstream.md).
 
-Fast, simple 2D text rendering for [`wgpu`](https://github.com/gfx-rs/wgpu).
+## Build
 
-</div>
+```sh
+cargo +1.95.0 check --all-targets
+cargo +1.95.0 test --lib
+# Explicit GPU checks: Vulkan adapter and installed sans-serif font required.
+cargo +1.95.0 test --lib -- --include-ignored --test-threads=1
+```
 
-## What is this?
-A fork of [`glyphon`], mainly used by [`iced`].
+Dependencies use public Git sources with full revision pins:
 
-[`glyphon`]: https://github.com/grovesNL/glyphon
-[`iced`]: https://github.com/iced-rs/iced
+| Dependency | Source revision |
+| --- | --- |
+| [enzim-wgpu](https://github.com/enz1m/enzim-wgpu) | `7f040c8501f6838262c90ede4edfa40940fe2de8` |
+| [enzim-cosmic-text](https://github.com/enz1m/enzim-cosmic-text) | `ad474131e52c0fde5979f8def2889489b50a0480` |
+
+Applications using these types directly must use the same Git URL and revision
+to keep Rust types compatible. Pin this repository to a full commit too, and
+commit the application's Cargo.lock. This library follows upstream in leaving
+Cargo.lock untracked; transitive registry dependencies resolve for each consumer.
 
 ## License
-This project is licensed under either [Apache License, Version 2.0](LICENSE-APACHE), [zlib License](LICENSE-ZLIB), or [MIT License](LICENSE-MIT), at your option.
 
-## Contribution
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this project by you, as defined in the Apache 2.0 license, shall be triple licensed as above, without any additional terms or conditions.
+MIT OR Apache-2.0 OR Zlib, as upstream. Original license files and notices remain.

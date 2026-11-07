@@ -4,7 +4,8 @@ description = "Fast, simple 2D text rendering for wgpu. A fork of glyphon for ic
 version = "0.1.0"
 edition = "2024"
 authors = ["Héctor Ramón Jiménez <hector@hecrj.dev>"]
-repository = "https://github.com/iced-rs/cryoglyph"
+repository = "https://github.com/enz1m/enzim-cryoglyph"
+homepage = "https://github.com/enz1m/enzim-cryoglyph"
 license = "MIT OR Apache-2.0 OR Zlib"
 
 [dependencies]
