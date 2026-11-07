@@ -74,6 +74,9 @@ pub(crate) struct InnerAtlas {
     /// per-frame `HashSet` of in-use keys (upstream cryoglyph f4e7e4e).
     pub generation: usize,
     pub max_texture_dimension_2d: u32,
+    /// The adapter's hard limit; `max_texture_dimension_2d` is the effective
+    /// cap and may be lowered below it as a VRAM budget.
+    pub adapter_max_texture_dimension_2d: u32,
     pub stats: InnerStatistics,
 }
 
@@ -119,6 +122,7 @@ impl InnerAtlas {
             glyph_cache,
             generation: 0,
             max_texture_dimension_2d,
+            adapter_max_texture_dimension_2d: max_texture_dimension_2d,
             stats: InnerStatistics::default(),
         }
     }
@@ -156,6 +160,18 @@ impl InnerAtlas {
             let (_, value) = self.glyph_cache.pop_lru().unwrap();
             self.packer.deallocate(value.atlas_id.unwrap());
         }
+    }
+
+    /// Caps atlas growth at `max_size` texels per side, clamped to the range
+    /// the atlas can actually honour: never above the adapter limit and never
+    /// below the current size, which is already allocated.
+    ///
+    /// A VRAM budget for the text atlas, and the only way to
+    /// exercise the exhaustion path on an adapter whose limit is 8192+.
+    pub(crate) fn set_max_size(&mut self, max_size: u32) {
+        self.max_texture_dimension_2d = max_size
+            .min(self.adapter_max_texture_dimension_2d)
+            .max(self.size);
     }
 
     pub fn num_channels(&self) -> usize {
@@ -384,6 +400,19 @@ impl TextAtlas {
         }
     }
 
+    /// Caps growth of both atlases at `max_size` texels per side.
+    ///
+    /// The cap is clamped to the adapter's `max_texture_dimension_2d` and to the
+    /// size each atlas has already reached, so it can bound future growth but
+    /// never invalidates glyphs that are already cached. Once an atlas is at the
+    /// cap and every sized glyph in it is in use, preparing text that needs a
+    /// new glyph fails with [`crate::PrepareError::AtlasFull`] and
+    /// [`AtlasStatistics::growth_failures`] counts the refusal.
+    pub fn set_max_size(&mut self, max_size: u32) {
+        self.mask_atlas.set_max_size(max_size);
+        self.color_atlas.set_max_size(max_size);
+    }
+
     /// Resets the counters returned by [`TextAtlas::statistics`].
     pub fn reset_statistics(&mut self) {
         self.mask_atlas.stats = InnerStatistics::default();
@@ -521,5 +550,21 @@ mod gpu_tests {
             assert_eq!(atlas.stats.texture_copies, 1);
             assert_eq!(atlas.stats.glyphs_rerasterized_on_growth, 0);
         }
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan adapter; run explicitly"]
+    fn growth_cap_keeps_existing_allocation() {
+        let (device, queue) = gpu();
+        let mut atlas = InnerAtlas::new(&device, &queue, Kind::Mask);
+        atlas.set_max_size(1);
+        assert_eq!(atlas.max_texture_dimension_2d, 256);
+        assert!(!atlas.grow(&device, &queue));
+        assert_eq!(atlas.stats.growth_failures, 1);
+        atlas.set_max_size(512);
+        assert!(atlas.grow(&device, &queue));
+        atlas.set_max_size(1);
+        assert_eq!(atlas.max_texture_dimension_2d, 512);
+        assert!(!atlas.grow(&device, &queue));
     }
 }
