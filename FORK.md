@@ -7,7 +7,8 @@ The installed enzUI fork originally used `53ba3e879539d19ed8162942126a977ec896cc
 and already ported upstream's generation tracker (`f4e7e4e`). Using b457678
 preserves that change's original history and authorship. Its remaining two
 commits only route cosmic-text, superseded by our explicit public pin.
-No wgpu 30 or etagere 0.3 update is included.
+Upstream `master` through `cf38ed5ea0cfe95270b31ced2910560a7fcc5003` is merged,
+including wgpu 30 and etagere 0.3. Upstream authorship and ancestry are retained.
 
 The separate signed fork commits cover:
 

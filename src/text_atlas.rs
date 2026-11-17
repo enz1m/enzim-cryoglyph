@@ -703,7 +703,10 @@ mod gpu_tests {
             });
         device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
         recv.recv().unwrap().unwrap();
-        let mapped = buffer.slice(..).get_mapped_range();
+        let mapped = buffer
+            .slice(..)
+            .get_mapped_range()
+            .expect("the mapped buffer reads back");
         let row_bytes = 4 * atlas.num_channels();
         let result = mapped
             .chunks(256)
