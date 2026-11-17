@@ -23,7 +23,7 @@ Dependencies use public Git sources with full revision pins:
 
 | Dependency | Source revision |
 | --- | --- |
-| [enzim-wgpu](https://github.com/enz1m/enzim-wgpu) | `7f040c8501f6838262c90ede4edfa40940fe2de8` |
+| [enzim-wgpu](https://github.com/enz1m/enzim-wgpu) | `c62972c9be1326882c4b4f1939d8a2713e42d210` |
 | [enzim-cosmic-text](https://github.com/enz1m/enzim-cosmic-text) | `ad474131e52c0fde5979f8def2889489b50a0480` |
 
 Applications using these types directly must use the same Git URL and revision
