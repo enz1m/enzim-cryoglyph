@@ -9,14 +9,14 @@ homepage = "https://github.com/enz1m/enzim-cryoglyph"
 license = "MIT OR Apache-2.0 OR Zlib"
 
 [dependencies]
-wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "c62972c9be1326882c4b4f1939d8a2713e42d210", default-features = false, features = ["wgsl"] }
+wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "798421e7ac9091704835a8a733adfa2d7134dafb", default-features = false, features = ["wgsl"] }
 etagere = "0.3"
-cosmic-text = { version = "0.19", git = "https://github.com/enz1m/enzim-cosmic-text.git", rev = "ad474131e52c0fde5979f8def2889489b50a0480" }
+cosmic-text = { version = "0.19", git = "https://github.com/enz1m/enzim-cosmic-text.git", rev = "901771a75d45ff282b9c0bf86ab3738287557e8f" }
 lru = { version = "0.18.2", default-features = false }
 rustc-hash = "2"
 
 [dev-dependencies]
-wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "c62972c9be1326882c4b4f1939d8a2713e42d210", default-features = false, features = ["std", "vulkan"] }
+wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "798421e7ac9091704835a8a733adfa2d7134dafb", default-features = false, features = ["std", "vulkan"] }
 winit = "0.30"
 pollster = "0.4"
 criterion = { version = "0.5", features = ["html_reports"] }
