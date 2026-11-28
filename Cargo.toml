@@ -9,14 +9,14 @@ homepage = "https://github.com/enz1m/enzim-cryoglyph"
 license = "MIT OR Apache-2.0 OR Zlib"
 
 [dependencies]
-wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "798421e7ac9091704835a8a733adfa2d7134dafb", default-features = false, features = ["wgsl"] }
+wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "369c5fb5bf66d670efba7f9237d424b1ec4197b4", default-features = false, features = ["wgsl"] }
 etagere = "0.3"
 cosmic-text = { version = "0.19", git = "https://github.com/enz1m/enzim-cosmic-text.git", rev = "eeaa0eb774c4757a9e001cc748fcb79044fa8722" }
 lru = { version = "0.18.2", default-features = false }
 rustc-hash = "2"
 
 [dev-dependencies]
-wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "798421e7ac9091704835a8a733adfa2d7134dafb", default-features = false, features = ["std", "vulkan"] }
+wgpu = { version = "30", git = "https://github.com/enz1m/enzim-wgpu.git", rev = "369c5fb5bf66d670efba7f9237d424b1ec4197b4", default-features = false, features = ["std", "vulkan"] }
 winit = "0.30"
 pollster = "0.4"
 criterion = { version = "0.5", features = ["html_reports"] }
